@@ -1,8 +1,29 @@
+import zlib
+
 def writeToPNG(name,width,height,pixStream):
 
+    #establish parameters of the PNG file
+    bitDepth = 8 #bits per color channel
+    colorType = 2 #true color ie RGB
+    compressMethod = 0 #0 = no
+    filterMethod = 0 #0 = no
+    interlaceMethod = 0 #0 = not interlaced
+
     #set up the bytes that will be used to create the PNG image file
+    #standard header to designate PNG file
     byteHeader = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
-    byteIHDR = b'\x00\x00\x00\x0D\x49\x48\x44\x52'+width.to_bytes(4, 'big')+height.to_bytes(4, 'big')+b'\x08\x02\x00\x00\x00\x90\x77\x53\xDE'
+    #establish the size of the PNG in pixels
+    byteIHDR = width.to_bytes(4)+height.to_bytes(4)
+    #convert the parameters established earlier into bytes
+    byteIHDR += bitDepth.to_bytes(1)+colorType.to_bytes(1)+compressMethod.to_bytes(1)+filterMethod.to_bytes(1)+interlaceMethod.to_bytes(1)
+    #calculate length of data in chunk
+    IHDRlen = len(byteIHDR)
+    #add IHDR designation to the beginning of the chunk
+    byteIHDR = 'IHDR'.encode('ascii')+byteIHDR
+    #add length to beginning of IHDR and calculate CRC of IHDR using zlib
+    byteIHDR = IHDRlen.to_bytes(4)+byteIHDR+zlib.crc32(byteIHDR).to_bytes(4)
+    #byteIHDR = b'\x00\x00\x00\x0D\x49\x48\x44\x52'+width.to_bytes(4, 'big')+height.to_bytes(4, 'big')+b'\x08\x02\x00\x00\x00\x90\x77\x53\xDE'
+    #standard image end chunk
     byteIEND = b'\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82'
 
     #open/create the PNG file and then write to it
