@@ -1,8 +1,22 @@
 import zlib
+import struct
 
 def subFilter(scanLine):
     #write sub filter algorithm later
     return 'ERROR'
+
+def scalePixels(factor, pixStream, bitDepth):
+    returnPixels = []
+    for scanLine in pixStream:
+        tempLine = b''
+        print(str(bitDepth/2)+'s')
+        indivBytes = struct.iter_unpack(str(int(bitDepth/2))+'s',scanLine)
+        for channel in indivBytes:
+            for iter in range(0,factor):
+                tempLine+=channel[0]
+        for iter in range(0,factor):
+            returnPixels.append(tempLine)
+    return returnPixels
 
 def writeToPNG(name,width,height,pixStream,bitDepthIn):
 
@@ -30,7 +44,7 @@ def writeToPNG(name,width,height,pixStream,bitDepthIn):
     byteIHDR = IHDRlen.to_bytes(4)+byteIHDR+zlib.crc32(byteIHDR).to_bytes(4)
 
     #filter each scan line from the pixel stream
-    # #Using 0 to signify no filter process for now
+    #Using 0 to signify no filter process for now
     rawIDAT = b''
     for scanLine in pixStream:
         rawIDAT += b'\x00'+scanLine
@@ -88,6 +102,8 @@ def createChecker(name,width,height):
 
     black = b'\x00\x00\x00\x00\x00\x00\xFF\xFF'
     white = b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF'
+    pixelScale = 10 #establish how much bigger I want each checker to be, growth in X and Y
+    channelBitDepth = 16 #set bit depth of each channel for final image
 
     board = []
 
@@ -102,89 +118,10 @@ def createChecker(name,width,height):
             currentColor =  bytes(a^b for a, b in zip(currentColor,b'\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00'))
         board.append(tempBoardRow)
     
-    writeToPNG(name,width,height,board,16)
-
-def createGradient(name,width,height):
-
-    def scanLineBytes(startColor):
-
-        scanLine = b''
-        pixColor = startColor
-        pixCounter = 0
-
-        while pixColor[1]<255 and pixCounter<width:
-            pixCounter+=1
-            pixColor[1]+=1
-            scanLine+=byteColor(pixColor)
-        while pixColor[0]>0 and pixCounter<width:
-            pixCounter+=1
-            pixColor[0]-=1
-            scanLine+=byteColor(pixColor)
-        while pixColor[2]<255 and pixCounter<width:
-            pixCounter+=1
-            pixColor[2]+=1
-            scanLine+=byteColor(pixColor)
-        while pixColor[1]>0 and pixCounter<width:
-            pixCounter+=1
-            pixColor[1]-=1
-            scanLine+=byteColor(pixColor)
-        while pixColor[0]<255 and pixCounter<width:
-            pixCounter+=1
-            pixColor[0]+=1
-            scanLine+=byteColor(pixColor)
-        while pixColor[2]>0 and pixCounter<width:
-            pixCounter+=1
-            pixColor[2]-=1
-            scanLine+=byteColor(pixColor)
-        while pixCounter<width:
-            scanLine+=byteColor(pixColor)
-
-        return scanLine
-
-    rowColor = [255,0,0,255]
-    rowCounter = 0
-    pixStream = []
-
-    while rowColor[1]<255 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[1]+=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowColor[0]>0 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[0]-=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowColor[2]<255 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[2]+=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowColor[1]>0 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[1]-=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowColor[0]<255 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[0]+=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowColor[2]>0 and rowCounter<width:
-        print(rowColor)
-        rowCounter+=1
-        rowColor[2]-=1
-        pixStream.append(scanLineBytes(rowColor[:]))
-    while rowCounter<width:
-        print(rowColor)
-        pixStream.append(scanLineBytes(rowColor[:]))
-
-    writeToPNG(name,width,height,pixStream,8)
-        
-
+    board = scalePixels(pixelScale,board,channelBitDepth)
+    writeToPNG(name,width*pixelScale,height*pixelScale,board,channelBitDepth)
             
 #fileWritingTest()
 #writeToPNG('PNGWriteTest',1,1,b'\x00\x00\x00\x0C\x49\x44\x41\x54\x08\xD7\x63\xF8\xCF\xC0\x00\x00\x03\x01\x01\x00\x18\xDD\x8D\xB0')
 createChecker('checkerTest',3,3)
-createChecker('bigCheckerTest',35,50)
-createGradient('gradTest',500,500)
+#createChecker('bigCheckerTest',35,50)
