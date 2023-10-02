@@ -2,6 +2,30 @@ import zlib
 import struct
 import random
 
+
+class Raindrop:
+
+    #the raindrop class holds all of the information unique to each individual raindrop
+    def __init__(self, groundRange, groundMax, width, height):
+        #save inputs to be used in other functions
+        self.height = height 
+        #create a semi random place where the raindrop will hit the "ground"
+        self.ground = random.randrange(groundRange,groundMax)
+        #set a random start for the raindrop that is at least above the ground
+        self.origin = (random.randrange(0-groundMax, self.ground),random.randrange(width))
+        self.currentLoc = [self.origin[0],self.origin[1]]
+
+    def __str__(self):
+        return f"({self.currentLoc[1]},{self.currentLoc[0]})"
+
+    def step(self, speed):
+        #check if the raindrop has ht the ground, and if so move it to a space above the actual image
+        if self.currentLoc[0]>=self.ground:
+            self.currentLoc[0] = self.currentLoc[0] - self.height
+        else:
+            #otherwise, have the raindrop move one step
+            self.currentLoc[0] += speed
+
 def subFilter(scanLine):
     #write sub filter algorithm later
     return 'ERROR'
@@ -48,15 +72,19 @@ def writeToPNG(name,width,height,pixStream,bitDepthIn):
     #filter each scan line from the pixel stream
     #Using 0 to signify no filter process for now
     rawIDAT = b''
+    print("-adding filter type to scan lines")
     for scanLine in pixStream:
-        rawIDAT += b'\x00'+scanLine
+        rawIDAT+=b'\x00'+scanLine
     #compress the contiguous stream of filtered scanlines
+    print("-compressing IDAT data")
     byteIDAT = zlib.compress(rawIDAT)
     #get length of chunk data
+    print("-adding IDAT bits")
     IDATlen = len(byteIDAT)
     #add chunk type
     byteIDAT = 'IDAT'.encode('ascii')+byteIDAT
     #add chunk data length to beginning of IDAT and calculate CRC of chunk type and chunk data using zlib
+    print("-creating crc for IDAT chunk")
     byteIDAT = IDATlen.to_bytes(4)+byteIDAT+zlib.crc32(byteIDAT).to_bytes(4)
 
     #standard PNG image end chunk
@@ -135,25 +163,57 @@ def createChecker(name,width,height):
             
 def createRain(name,width,height):
 
-    #create a list of lists that will hold the pixel data initialized with a clear pixel in every spot
-    rainGrid = [[[0,0,0,0] for _ in range(width)] for _ in range(height)]
-    rainGrid[0][0][3] = 255
-    #create a list of random places on the grid for where we want raindrops for the first frame
+    #establish the range within which raindrops can hit the "ground"
+    groundRange = height-40
+    groundMax = height-20
+    #designate how dense the raindrops should be comparitive to the size of the picture ie pixels per raindrop
+    rainDensity = 400
+    numOfDrops = round((width*height)/rainDensity)
+    #designate how many pixels long a rain drop is
+    raindropLength = 16
+    #designate how fast raindrops fall
+    raindropSpeed = 12
+    #calculate number of frames to complete the loop
+    numFrames = round(height/raindropSpeed)
+    #establish how much bigger I want each pixel to be, growth in X and Y
+    pixelScale = 5 
+    #set bit depth of each channel for final image
+    channelBitDepth = 8 
 
-    #convert the list of lists into a byte stream that can be used by the PNG writing function
-    pixStream = []
-    for row in rainGrid:
-        tempRow =b''
-        for pixel in row:
-            tempRow+=byteColor8(pixel)
-        pixStream.append(tempRow)
-    print(pixStream)
-    #output the generated image as a PNG
-    writeToPNG(name,width,height,pixStream,8)
+    #initialize a list of raindrops
+    print("Creating raindropList")
+    raindropList = [Raindrop(groundRange, groundMax, width, height) for _ in range(numOfDrops)]
+    for frame in range(numFrames):
+        #create a list of lists that will hold the pixel data initialized with a clear pixel in every spot
+        print("Creating rainGrid")
+        rainGrid = [[[0,0,0,255] for _ in range(width)] for _ in range(height)]#black pixels for testing
+        #use the raindrop list to implement the raindrops into pixels on the rain grid
+        print("Changing color of raindrops")
+        for drop in raindropList:
+            for i in range(raindropLength):
+                if drop.currentLoc[0]-i >= 0:
+                    rainGrid[drop.currentLoc[0]-i][drop.currentLoc[1]] = [255+(i*-10),255+(i*-10),255+(i*-10),255]
+            #step the raindrops forward one step so that on the next frame they are in a new location
+            drop.step(raindropSpeed)
+
+        #convert the list of lists into a byte stream that can be used by the PNG writing function
+        print("Converting to pixelstream")
+        pixStream = []
+        for row in rainGrid:
+            tempRow =b''
+            for pixel in row:
+                tempRow+=byteColor8(pixel)
+            pixStream.append(tempRow)
+        #scale each pixel up so that it is easier to see the rain
+        print("Scaling up pixels")
+        pixStream = scalePixels(pixelScale,pixStream,channelBitDepth)
+        #output the generated image as a PNG
+        print("Writing to PNG file")
+        writeToPNG(name+str(frame),width*pixelScale,height*pixelScale,pixStream,channelBitDepth)
 
 
 #fileWritingTest()
 #writeToPNG('PNGWriteTest',1,1,b'\x00\x00\x00\x0C\x49\x44\x41\x54\x08\xD7\x63\xF8\xCF\xC0\x00\x00\x03\x01\x01\x00\x18\xDD\x8D\xB0')
 #createChecker('checkerTest',3,3)
 #createChecker('bigCheckerTest',35,50)
-createRain("rainTest",3,5)
+createRain("rainTest",200,200)
