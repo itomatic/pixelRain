@@ -1,6 +1,7 @@
 import zlib
 import struct
 import random
+import time
 
 
 class Raindrop:
@@ -19,7 +20,7 @@ class Raindrop:
         return f"({self.currentLoc[1]},{self.currentLoc[0]})"
 
     def step(self, speed):
-        #check if the raindrop has ht the ground, and if so move it to a space above the actual image
+        #check if the raindrop has hit the ground, and if so move it to a space above the actual image
         if self.currentLoc[0]>=self.ground:
             self.currentLoc[0] = self.currentLoc[0] - self.height
         else:
@@ -69,22 +70,25 @@ def writeToPNG(name,width,height,pixStream,bitDepthIn):
     #add chunk data length to beginning of IHDR and calculate CRC of chunk type and chunk data using zlib
     byteIHDR = IHDRlen.to_bytes(4)+byteIHDR+zlib.crc32(byteIHDR).to_bytes(4)
 
-    #filter each scan line from the pixel stream
-    #Using 0 to signify no filter process for now
-    rawIDAT = b''
-    print("-adding filter type to scan lines")
-    for scanLine in pixStream:
-        rawIDAT+=b'\x00'+scanLine
+    #split the pixel input stream into multiple IDAT chunks each 100 scanlines large
+    fullRawIDAT = b''
+    i = 0
+    while i < height:
+        #filter each scan line for this IDAT chunk
+        #Using 0x00 to signify no filter process for now
+        rawIDAT = b''
+        for scanLine in range(i, i+100):
+            if scanLine < height:
+                rawIDAT+=b'\x00'+pixStream[scanLine]
+        fullRawIDAT = fullRawIDAT+rawIDAT
+        i+=100
     #compress the contiguous stream of filtered scanlines
-    print("-compressing IDAT data")
-    byteIDAT = zlib.compress(rawIDAT)
+    byteIDAT = zlib.compress(fullRawIDAT)
     #get length of chunk data
-    print("-adding IDAT bits")
     IDATlen = len(byteIDAT)
     #add chunk type
     byteIDAT = 'IDAT'.encode('ascii')+byteIDAT
     #add chunk data length to beginning of IDAT and calculate CRC of chunk type and chunk data using zlib
-    print("-creating crc for IDAT chunk")
     byteIDAT = IDATlen.to_bytes(4)+byteIDAT+zlib.crc32(byteIDAT).to_bytes(4)
 
     #standard PNG image end chunk
@@ -95,45 +99,105 @@ def writeToPNG(name,width,height,pixStream,bitDepthIn):
     fileData.write(byteHeader+byteIHDR+byteIDAT+byteIEND)
     fileData.close()
 
-def fileWritingTest():
-
-    #hardcoded bytes necessary to creat a PNG image of a single red pixel
-    byteHeader = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
-    byteIHDR = b'\x00\x00\x00\x0D\x49\x48\x44\x52\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90\x77\x53\xDE'
-    byteContent = b'\x00\x00\x00\x0C\x49\x44\x41\x54\x08\xD7\x63\xF8\xCF\xC0\x00\x00\x03\x01\x01\x00\x18\xDD\x8D\xB0'
-    byteIEND = b'\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82'
-
-    #testing ability to create file
-    f = open('textTest.txt', 'w')
-    f.write('Hello my little test')
-    f.close()
-
-    #testing ability to make PNG file of single red pixel
-    g = open('pixTest.png', 'wb')
-    g.write(byteHeader+byteIHDR+byteContent+byteIEND)
-    g.close()
-    
-    # f2 = open('textTest.txt', 'rb')
-    # print(f2.read())
-    # f2.close()
-
-    # g2 = open('pixTest.png','rb')
-    # print(g2.read())
-    # g2.close()
-
-def byteColor8(pixColor):
+def bytesToColor8(pixColor):
     color = pixColor[0].to_bytes(1)
     color += pixColor[1].to_bytes(1)
     color += pixColor[2].to_bytes(1)
     color += pixColor[3].to_bytes(1)
     return color
 
-def byteColor16(pixColor):
+def colorToBytes8(pixColor):
+    color = pixColor[0].to_bytes(1)
+    color += pixColor[1].to_bytes(1)
+    color += pixColor[2].to_bytes(1)
+    color += pixColor[3].to_bytes(1)
+    return color
+
+def colorToBytes16(pixColor):
     color = pixColor[0].to_bytes(2)
     color += pixColor[1].to_bytes(2)
     color += pixColor[2].to_bytes(2)
     color += pixColor[3].to_bytes(2)
     return color
+
+def openBackgroundImage(imgToOpen):
+
+    bgPixStream = []
+
+    try:
+        bgFile = open(imgToOpen,'rb')
+    except:
+        print('Unable to open background image')
+    else:
+
+        if bgFile.read(8) == b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A':
+            print('verified PNG signature')
+        else:
+            raise Exception('Not a valid PNG file')
+        
+        chunkLength = int.from_bytes(bgFile.read(4))
+        chunkSignature = bgFile.read(4)
+        if chunkSignature == b'IHDR':
+            print('verified IHDR signature')
+        else:
+            raise Exception('Not a valid PNG file')
+        
+        byteWidth = bgFile.read(4)
+        width = int.from_bytes(byteWidth)
+        byteHeight =bgFile.read(4)
+        height =  int.from_bytes(byteHeight)
+        byteBitDepth = bgFile.read(1)
+        bitDepth =  int.from_bytes(byteBitDepth)
+        byteColorType = bgFile.read(1)
+        colorType =  int.from_bytes(byteColorType)
+        byteCompressionMethod = bgFile.read(1)
+        compressionMethod =  int.from_bytes(byteCompressionMethod)
+        byteFilterMethod = bgFile.read(1)
+        filterMethod =  int.from_bytes(byteFilterMethod)
+        byteInterlaceMethod = bgFile.read(1)
+        interlaceMethod =  int.from_bytes(byteInterlaceMethod)
+
+        chunkCRC = bgFile.read(4)
+        testCRC = zlib.crc32(chunkSignature+byteWidth+byteHeight+byteBitDepth+byteColorType+byteCompressionMethod+byteFilterMethod+byteInterlaceMethod).to_bytes(4)
+        if testCRC == chunkCRC:
+            print('verified IHDR CRC')
+        else:
+            raise Exception('IHDR does not match CRC')
+        
+        if compressionMethod != 0 or filterMethod != 0 or interlaceMethod != 0:
+            print('Unable to process this image file')
+        else:
+            while True:
+                chunkLength = int.from_bytes(bgFile.read(4))
+                chunkSignature = bgFile.read(4)
+                print(chunkSignature)
+                if chunkSignature == b'\x49\x45\x4E\x44':
+                    break
+                chunkData = bgFile.read(chunkLength)
+                chunkCRC = bgFile.read(4)
+                testCRC = zlib.crc32(chunkSignature+chunkData).to_bytes(4)
+                if testCRC != chunkCRC:
+                    print('issue with {} chunk'.format(chunkSignature))
+                else:
+                    if chunkSignature == 'IDAT'.encode('ascii'):
+                        pixelData = zlib.decompress(chunkData)
+                        match colorType:
+                            case 0:
+                                print('unable to process grayscale images')
+                            case 2:
+                                print('working on true color image')
+                            case 3:
+                                print('unable to process indexed PNG images')
+                            case 4:
+                                print('unable to process grayscale images with alpha')
+                            case 6:
+                                print('working on true color image with alpha')
+                            case _:
+                                print('unrecognized color type')
+
+                        bgPixStream.append(chunkData)
+    finally:
+        bgFile.close()
 
 def createChecker(name,width,height): 
 
@@ -179,16 +243,23 @@ def createRain(name,width,height):
     pixelScale = 5 
     #set bit depth of each channel for final image
     channelBitDepth = 8 
+    #establish counters to get total times for processes to calculate averages with
+    rainTime = 0.0
+    aggregateTime = 0.0
 
     #initialize a list of raindrops
-    print("Creating raindropList")
     raindropList = [Raindrop(groundRange, groundMax, width, height) for _ in range(numOfDrops)]
-    for frame in range(numFrames):
+    for frame in range(numFrames):   
+
+        #print frame number to giver user idea of how long is left to run
+        print('Working on frame '+str(frame+1)+'/'+str(numFrames), end='\r')
+
+        #establish timer to see how long it takes to run the rain creation algorithm
+        rainStart = time.perf_counter()
+
         #create a list of lists that will hold the pixel data initialized with a clear pixel in every spot
-        print("Creating rainGrid")
         rainGrid = [[[0,0,0,255] for _ in range(width)] for _ in range(height)]#black pixels for testing
         #use the raindrop list to implement the raindrops into pixels on the rain grid
-        print("Changing color of raindrops")
         for drop in raindropList:
             for i in range(raindropLength):
                 if drop.currentLoc[0]-i >= 0:
@@ -197,23 +268,35 @@ def createRain(name,width,height):
             drop.step(raindropSpeed)
 
         #convert the list of lists into a byte stream that can be used by the PNG writing function
-        print("Converting to pixelstream")
         pixStream = []
         for row in rainGrid:
             tempRow =b''
             for pixel in row:
-                tempRow+=byteColor8(pixel)
+                tempRow+=colorToBytes8(pixel)
             pixStream.append(tempRow)
-        #scale each pixel up so that it is easier to see the rain
-        print("Scaling up pixels")
-        pixStream = scalePixels(pixelScale,pixStream,channelBitDepth)
-        #output the generated image as a PNG
-        print("Writing to PNG file")
-        writeToPNG(name+str(frame),width*pixelScale,height*pixelScale,pixStream,channelBitDepth)
+        
+        #add how long the rain algorithm took to calculate average
+        rainStop = time.perf_counter()
+        rainTime+=rainStop-rainStart
 
+        #scale each pixel up so that it is easier to see the rain
+        pixStream = scalePixels(pixelScale,pixStream,channelBitDepth)
+
+        #establish timer to see how long it takes to write to the PNG
+        fileWriteStart = time.perf_counter()
+        #output the generated image as a PNG
+        writeToPNG(name+str(frame),width*pixelScale,height*pixelScale,pixStream,channelBitDepth)
+        #add how long the PNG file writing process took to compute average
+        fileWriteStop = time.perf_counter()
+        aggregateTime = fileWriteStop-fileWriteStart+aggregateTime
+
+    #calculate time averages and print them out
+    print('\nRain generation averaged {} seconds per frame'.format(rainTime/numFrames))
+    print('File writing averaged {} seconds per frame'.format(aggregateTime/numFrames))
 
 #fileWritingTest()
 #writeToPNG('PNGWriteTest',1,1,b'\x00\x00\x00\x0C\x49\x44\x41\x54\x08\xD7\x63\xF8\xCF\xC0\x00\x00\x03\x01\x01\x00\x18\xDD\x8D\xB0')
 #createChecker('checkerTest',3,3)
 #createChecker('bigCheckerTest',35,50)
-createRain("rainTest",200,200)
+#createRain('rainTest',500,500)
+testBGFileRead = openBackgroundImage('checkerTest.png')
